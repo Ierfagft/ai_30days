@@ -19,8 +19,8 @@ class SimpleAgent:
 
         self.client = OpenAI(api_key=self.api_key, base_url=base_url)
         self.model = model
-        self.tools = []  # 后续可以通过 register_tool 添加工具
-        self.messages = []  # 对话历史
+        self.tools = []      # 后续可以通过 register_tool 添加工具
+        self.messages = []   # 对话历史
 
     def register_tool(self, name, description, parameters):
         """
@@ -43,7 +43,7 @@ class SimpleAgent:
         """
         self.messages.append({"role": role, "content": content})
 
-    def call_llm(self, user_input, stream=False):
+    def call_llm(self, user_input):
         """
         核心方法：调用大模型，支持工具调用
         返回：AI 的回复内容（或 tool_calls）
@@ -55,16 +55,13 @@ class SimpleAgent:
         response = self.client.chat.completions.create(
             model=self.model,
             messages=self.messages,
-            tools=self.tools if self.tools else None,  # 如果有注册工具才传
+            tools=self.tools if self.tools else None,
             tool_choice="auto" if self.tools else None
         )
 
         message = response.choices[0].message
 
-        # 如果是流式输出，这里暂不处理（保持简洁）
-        # 实际项目中可以扩展
-
-        # 把 AI 的回复加入消息列表（如果是 tool_calls，也一并保留）
+        # 把 AI 的回复加入消息列表
         self.messages.append(message.model_dump())
 
         # 如果 AI 决定调用工具，返回 tool_calls；否则返回文字内容
@@ -82,13 +79,10 @@ class SimpleAgent:
 
         print(f"🔧 执行工具：{function_name}({arguments})")
 
-        # 路由表：根据函数名执行不同的本地函数
+        # ========== 只有 get_weather 一个分支 ==========
         if function_name == "get_weather":
             city = arguments.get("city")
             result = self._get_weather(city)
-        elif function_name == "calculator":
-            expression = arguments.get("expression")
-            result = self._calculator(expression)
         else:
             result = f"未知工具：{function_name}"
 
@@ -103,14 +97,13 @@ class SimpleAgent:
 
     def run(self, user_input):
         """
-        对外暴露的入口：输入用户问题，返回最终答案（自动完成工具调用循环）
+        对外暴露的入口：输入用户问题，返回最终答案
         """
         # 第一次调用 LLM
         result = self.call_llm(user_input)
 
         # 如果 AI 调用了工具，执行工具并再次调用 LLM 生成最终回复
         if result["type"] == "tool_calls":
-            # 取第一个工具调用（当前只支持单工具）
             tool_call = result["data"][0]
             tool_result = self.execute_tool(tool_call)
             print(f"📦 工具返回：{tool_result}")
@@ -122,13 +115,12 @@ class SimpleAgent:
             )
             final_reply = final_response.choices[0].message.content
 
-            # 把最终回复也加入历史（可选）
             self.messages.append({"role": "assistant", "content": final_reply})
             return final_reply
         else:
             return result["data"]
 
-    # ========== 本地工具函数 ==========
+    # ========== 唯一的本地工具函数：查天气 ==========
     def _get_weather(self, city):
         """模拟天气查询"""
         if city == "北京":
@@ -138,26 +130,14 @@ class SimpleAgent:
         else:
             return f"未知城市：{city}"
 
-    def _calculator(self, expression):
-        """简易计算器（仅支持加减乘除）"""
-        try:
-            # 安全起见，只允许数字和运算符
-            allowed = set("0123456789+-*/(). ")
-            if not all(c in allowed for c in expression):
-                return "表达式包含非法字符"
-            return eval(expression)
-        except Exception as e:
-            return f"计算错误：{e}"
-
 # =============================================
 # 测试代码
 # =============================================
 if __name__ == "__main__":
-    # 1. 创建 Agent
     agent = SimpleAgent()
     print("🤖 Agent 初始化完成\n")
 
-    # 2. 注册工具
+    # 只注册一个工具
     agent.register_tool(
         name="get_weather",
         description="获取指定城市的当前天气信息",
@@ -170,7 +150,6 @@ if __name__ == "__main__":
         }
     )
 
-    # 3. 使用 Agent
     user_input = "北京今天天气怎么样？"
     print(f"🧑 用户：{user_input}")
     reply = agent.run(user_input)
